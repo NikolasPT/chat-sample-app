@@ -4,18 +4,23 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticKernelSamples;
 
+/// <summary>
+/// This sample demonstrates Semantic Kernel plugins and how to use them in a chat context.
+/// It uses a DateTime plugin to get the current date and time, which is then used in the chat prompt.
+/// </summary>
+
 internal static class Sample02
 {
     public static async Task RunAsync(IConfiguration config)
     {
-        var deploymentName = config["AI:OpenAI:DeploymentName"]!;
-        var endpoint = config["AI:OpenAI:Endpoint"]!;
-        var apiKey = config["AI:OpenAI:APIKey"]!;
+        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
+        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
+        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
 
         // Initialize Semantic Kernel
         var builder = Kernel.CreateBuilder();
-        // Use null-forgiving operator for config values
         builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
+        
         // Register DateTime helper plugin
         builder.Plugins.AddFromFunctions(
             pluginName: "DateTimeHelpers",
@@ -34,17 +39,24 @@ internal static class Sample02
             promptTemplate: @"The current date and time is {{ datetimehelpers.now }}.{{ $input }}"
         );
 
+        Console.WriteLine();
         Console.WriteLine("Chat with DateTime plugin (type 'exit' to quit):");
+        Console.WriteLine();
+
+        // ---------- Chat loop ----------
         while (true)
         {
             Console.Write("Me: ");
-            var input = Console.ReadLine();
-            if (string.Equals(input, "exit", StringComparison.OrdinalIgnoreCase)) break;
+            string? input = Console.ReadLine();
+            if (string.Equals(input, "exit", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
 
-            // Use null-forgiving operator for input
-            var result = await prompt.InvokeAsync(kernel, new() { ["input"] = input! });
+            var result = await prompt.InvokeAsync(kernel, new() { ["input"] = input });
             Console.WriteLine($"AI: {result}");
             Console.WriteLine();
         }
+
     }
 }

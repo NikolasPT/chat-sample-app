@@ -2,7 +2,10 @@ using System.Text;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.Extensions.Configuration;
-
+using Microsoft.SemanticKernel.Plugins.Web.Google;
+using Microsoft.SemanticKernel.Data;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SemanticKernelSamples;
 
@@ -10,53 +13,103 @@ internal static class Sample05
 {
     public static async Task RunAsync(IConfiguration config)
     {
-        var deploymentName = config["AI:OpenAI:DeploymentName"]!;
-        var endpoint = config["AI:OpenAI:Endpoint"]!;
-        var apiKey = config["AI:OpenAI:APIKey"]!;
+        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
+        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
+        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
+        var searchEngineId       = config["Google:SearchEngineId"]!;
+        var searchConsoleAPIKey  = config["Google:SearchConsoleAPIKey"]!;
 
-        // Initialize Kernel
-        var builder = Kernel.CreateBuilder();
-        // Use null-forgiving operator for config values
+        // ---------- Kernel & model ----------
+        IKernelBuilder builder = Kernel.CreateBuilder();
         builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
-        var kernel = builder.Build();
 
-        // Prepare chat history
-        var chatService = kernel.GetRequiredService<IChatCompletionService>();
-        var chat = new ChatHistory(systemMessage: "You are an AI assistant that helps people find information.");
+        // Register the function-invocation filter so plugin calls are logged
+        builder.Services.AddSingleton<IFunctionInvocationFilter, InvocationLogger>();
 
-        // Download web pages for context
-        var urls = new[]
+        Kernel kernel = builder.Build();
+
+        // ---------- Google text-search plugin ----------
+        GoogleTextSearch textSearch = new (
+            searchEngineId,
+            searchConsoleAPIKey);
+
+        var searchPlugin = textSearch.CreateWithGetTextSearchResults("SearchPlugin");
+        kernel.Plugins.Add(searchPlugin);
+
+        // ---------- Streaming chat settings ----------
+        PromptExecutionSettings settings = new()
         {
-            "https://raw.githubusercontent.com/dotnet/docs/main/docs/csharp/whats-new/csharp-12.md"
-            // add more URLs as needed
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()   // let the model decide
         };
-        var sb = new StringBuilder();
-        using var http = new HttpClient();
-        foreach (var url in urls)
-        {
-            sb.AppendLine(await http.GetStringAsync(url));
-        }
-        chat.AddUserMessage($"Here's some additional information: {sb}");
 
-        Console.WriteLine("Chat with dynamic web content (type 'exit' to quit):");
+        IChatCompletionService chatSvc = kernel.GetRequiredService<IChatCompletionService>();
+        ChatHistory history = new(systemMessage:
+            "You are an AI assistant that helps people find information. " +
+            "Include citations to the relevant information where it is referenced in the response. " +
+            "When you call SearchPlugin.GetTextSearchResults, always pass count=\"10\" so that ten results are returned.");
+
+        Console.WriteLine();
+        Console.WriteLine("Chat with streaming and Google search enabled (type 'exit' to quit):");
+        Console.WriteLine();
+        
+        // ---------- Chat loop ----------
         while (true)
         {
             Console.Write("Me: ");
-            var question = Console.ReadLine();
-            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase)) break;
-
-            // Use null-forgiving operator for question
-            chat.AddUserMessage(question!); 
-            var responseBuilder = new StringBuilder();
-            Console.Write("AI: ");
-            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chat, null, kernel))
+            string question = Console.ReadLine() ?? "";
+            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
             {
-                Console.Write(msg.Content);
-                responseBuilder.Append(msg.Content);
+                break;
+            }
+
+            history.AddUserMessage(question); // Add question to chat history
+
+            // ---------- Stream the reply ----------
+            var buffer = new StringBuilder();
+            Console.Write("AI: ");
+            await foreach (var chunk in chatSvc.GetStreamingChatMessageContentsAsync(history, settings, kernel))
+            {
+                Console.Write(chunk.Content);
+                buffer.Append(chunk.Content);
             }
             Console.WriteLine();
-            chat.AddAssistantMessage(responseBuilder.ToString());
+
+            history.AddAssistantMessage(buffer.ToString()); // Add reply to chat history
             Console.WriteLine();
         }
+
     }
 }
+
+
+public sealed class InvocationLogger : IFunctionInvocationFilter
+{
+    public async Task OnFunctionInvocationAsync(
+        FunctionInvocationContext context,
+        Func<FunctionInvocationContext, Task> next)
+    {
+        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true
+        };
+
+        // 1️ before the plugin runs
+        Console.WriteLine();
+        Console.WriteLine("===================================================================");
+        Console.WriteLine($"{context.Function.PluginName}.{context.Function.Name}");
+        Console.WriteLine($"args: {JsonSerializer.Serialize(context.Arguments, opts)}");
+
+        await next(context);           // executes the plugin
+
+        // 2️ after: GetValue<T>() to read the payload
+        if (context.Result is { } r)
+        {
+            var payload = r.GetValue<object>();   // or IEnumerable<TextSearchResult>
+            Console.WriteLine($"← {context.Function.Name} result:");
+            Console.WriteLine(JsonSerializer.Serialize(payload, opts));
+        }
+        Console.WriteLine("===================================================================");
+        Console.WriteLine();
+    }
+}
+

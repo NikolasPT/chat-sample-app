@@ -20,8 +20,7 @@ class Program
         Console.WriteLine(" 5) Chat with dynamic web content");
         Console.WriteLine(" 6) Embedding similarity demo");
         Console.WriteLine(" 7) Chat with in‑memory RAG");
-        Console.WriteLine(" 8) Chat with SQLite RAG");
-        Console.Write("Enter choice (1-8): ");
+        Console.Write("Enter choice (1-7): ");
         if (!int.TryParse(Console.ReadLine(), out int choice))
         {
             Console.WriteLine("Invalid input. Exiting.");
@@ -47,9 +46,6 @@ class Program
                 break;
             case 7:
                 await Sample07.RunAsync(config);
-                break;
-            case 8:
-                await Sample08.RunAsync(config);
                 break;
             default:
                 Console.WriteLine("Option not yet implemented.");

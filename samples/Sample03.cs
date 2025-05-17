@@ -5,39 +5,51 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticKernelSamples;
 
+
+/// <summary>
+/// This sample demonstrates the chat history feature of the Semantic Kernel.
+/// It allows you to have a conversation with the AI, maintaining context across messages.
+/// </summary>
+
 internal static class Sample03
 {
     public static async Task RunAsync(IConfiguration config)
     {
-        var deploymentName = config["AI:OpenAI:DeploymentName"]!;
-        var endpoint = config["AI:OpenAI:Endpoint"]!;
-        var apiKey = config["AI:OpenAI:APIKey"]!;
+        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
+        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
+        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
 
         // Initialize Semantic Kernel
         var builder = Kernel.CreateBuilder();
-        // Use null-forgiving operator for config values
         builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
         var kernel = builder.Build();
 
         // Create chat with history
         var chatService = kernel.GetRequiredService<IChatCompletionService>();
-        var chat = new ChatHistory(systemMessage: "You are an AI assistant that helps people find information.");
+        ChatHistory chatHistory = new (
+            systemMessage: "You are an AI assistant that helps people find information.");
 
+        Console.WriteLine();
         Console.WriteLine("Chat with memory history (type 'exit' to quit):");
+        Console.WriteLine();
+
+        // ---------- Chat loop ----------
         while (true)
         {
             Console.Write("Me: ");
-            var question = Console.ReadLine();
+            string? question = Console.ReadLine()!;
             if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
+            {
                 break;
+            }
 
-            // Use null-forgiving operator for question
-            chat.AddUserMessage(question!); 
-            var answer = await chatService.GetChatMessageContentAsync(chat);
-            chat.AddAssistantMessage(answer.Content!); 
+            chatHistory.AddUserMessage(question); 
+            var answer = await chatService.GetChatMessageContentAsync(chatHistory);
+            chatHistory.AddAssistantMessage(answer.Content!); 
 
             Console.WriteLine($"AI: {answer.Content}");
             Console.WriteLine();
         }
+
     }
 }
