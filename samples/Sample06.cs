@@ -1,80 +1,147 @@
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Embeddings;
-using System.Numerics.Tensors;
+using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Memory;
+using Microsoft.SemanticKernel.Text;
+using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
+using AngleSharp.Html.Parser;
 
 
 namespace SemanticKernelSamples;
 
 /// <summary>
-/// This sample demonstrates how to use the Semantic Kernel to generate embeddings for a given input
-/// and compute similarities with a set of examples.
-/// It uses the Azure OpenAI embedding service to generate embeddings and compute cosine similarity.
+/// This sample demonstrates how to addd Retrieval-Augmented Generation (RAG) to a chat service using Semantic Kernel.
+/// It defines a list of articles, fetches their content, and indexes them into a memory store. This data is then used
+/// for contextual information retrieval during the chat session.
 /// </summary>
-
 
 internal static class Sample06
 {
-    public static async Task RunAsync(IConfiguration config)
+    public static async Task<bool> RunAsync(IConfiguration config)
     {
+        var deploymentName =            config["AzureAIFoundry:DeploymentName"]!;
+        var endpoint =                  config["AzureAIFoundry:GPT41:Endpoint"]!;
+        var apiKey =                    config["AzureAIFoundry:GPT41:APIKey"]!;
 
         var embeddingDeploymentName =   config["AzureAIFoundry:EmbeddingDeploymentName"]!;
         var embeddingEndpoint =         config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
         var embeddingApiKey =           config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
 
-        // Initialize Semantic Kernel with embedding service
+        const string memoryName = "RAG-memory";
+
+        // Initialize Semantic Kernel and chat service
         var builder = Kernel.CreateBuilder();
-        builder.AddAzureOpenAITextEmbeddingGeneration(embeddingDeploymentName, embeddingEndpoint, embeddingApiKey);
-        var kernel = builder.Build();
+        builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
+        Kernel kernel = builder.Build();
 
-        string input = "Sopra Steria er Danmarks bedste IT-virksomhed.";
-        List<string> examples =
+        var chatService = kernel.GetRequiredService<IChatCompletionService>();
+        ChatHistory chatHistory = new (systemMessage: "You are an AI assistant that helps people find information.");
+
+        // Build in-memory semantic memory with embeddings for RAG
+        // Instantiate the embedding generation service
+        var embeddingService = new AzureOpenAITextEmbeddingGenerationService(
+            embeddingDeploymentName,
+            embeddingEndpoint,
+            embeddingApiKey);
+
+        // Explicitly type memory variable and use WithTextEmbeddingGeneration
+        ISemanticTextMemory memory = new MemoryBuilder()
+            .WithMemoryStore(new VolatileMemoryStore())
+            .WithTextEmbeddingGeneration(embeddingService) // Use the instantiated service
+            .Build();
+
+        // Download and index documents into memory
+        List<string> articleList = 
         [
-            "Sopra Steria er Danmarks bedste IT-virksomhed.",
-            "Sopra Steria is the best IT company in Denmark.",
-            "What is the best IT company in Denmark?",
-            "Sopra Steria is a leading IT company in Denmark.",
-            "Sopra Steria is a top IT company in Denmark.",
-            "Sopra Steria builds IT systems",
-            "Sopra Steria is a company.",
-            "Denmark is a country.",
-            "København ligger i Danmark",
-            "Min virksomhed hedder Sopra Steria.",
-            "Jeg hedder Nikolas"
+            "https://www.dr.dk/event/melodigrandprix/saadan-er-danmarks-chancer-i-eurovision-finalen",
+            "https://www.dr.dk/nyheder/indland/ansatte-i-hjemmeplejen-i-nordjysk-kommune-skal-nu-til-arbejde-baade-aften-og-nat"
         ];
-
-        Console.WriteLine();
-        Console.WriteLine("Generating embeddings and computing similarities...");
-        Console.WriteLine();
-        Console.WriteLine("Input:");
-        Console.WriteLine(input);
-        Console.WriteLine();
-
-        // Generate embeddings for the input and examples
-        ITextEmbeddingGenerationService embeddingService = kernel.GetRequiredService<ITextEmbeddingGenerationService>();
-        ReadOnlyMemory<float> inputEmbedding = (await embeddingService.GenerateEmbeddingsAsync([input])).First();
-        List<ReadOnlyMemory<float>> exampleEmbeddings = [.. await embeddingService.GenerateEmbeddingsAsync(examples)];
-
-        // Compute cosine similarity for each example and store results in a list
-        List<(float score, string text)> similarityResults = [];
-        for (int i = 0; i < examples.Count; i++)
+        List<string> allParagraphs = [];
+        using HttpClient httpClient = new();
+        foreach (var url in articleList)
         {
-            float score = TensorPrimitives.CosineSimilarity(exampleEmbeddings[i].Span, inputEmbedding.Span);
-            similarityResults.Add((score, examples[i]));
+            // Fetch raw HTML and parse with AngleSharp for readable text
+            var html = await httpClient.GetStringAsync(url);
+            var parser = new HtmlParser();
+            var doc = await parser.ParseDocumentAsync(html);
+            // Target article or main container, fallback to body
+            var container = doc.QuerySelector("article")
+                           ?? doc.QuerySelector("main")
+                           ?? doc.Body;
+            var text = container?.TextContent ?? string.Empty;
+            var lines = TextChunker.SplitPlainTextLines(text, 64);
+            var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512);
+            allParagraphs.AddRange(paragraphs);
+        }
+        for (var i = 0; i < allParagraphs.Count; i++)
+        {
+            await memory.SaveInformationAsync(memoryName, allParagraphs[i], $"paragraph[{i}]");
         }
 
-        // Sort the results in descending order by score
-        var similarities = similarityResults.OrderByDescending(x => x.score);
-
-        // Display the results
-        Console.WriteLine("Similarity\tExample");
-        foreach (var (score, text) in similarities)
+        // Chat loop with RAG
+        Console.WriteLine("Chat with in-memory RAG (type 'exit' to quit):");
+        while (true)
         {
-            Console.WriteLine($"{score:F6}\t{text}");
-        }
-        Console.WriteLine();
-        Console.WriteLine("Press any key to continue...");
-        Console.ReadKey();
+            Console.Write("Me: ");
+            string question = Console.ReadLine() ?? "";
+            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
 
+            // Retrieve relevant context
+            StringBuilder contextBuilder = new();
+            IAsyncEnumerable<MemoryQueryResult> results = memory.SearchAsync(
+                memoryName,
+                question,
+                limit: 3, // How many results to return
+                minRelevanceScore: 0.4f, // Minimum relevance score, lower returns more results
+                withEmbeddings: true);
+
+            await foreach (var result in results)
+            {
+                contextBuilder.AppendLine(result.Metadata.Text);
+            }
+
+            int contextIndex = -1;
+            if (contextBuilder.Length > 0)
+            {
+                // Output RAG context for debugging
+                Console.WriteLine("RAG system provided context:");
+                Console.WriteLine(contextBuilder.ToString());
+                Console.WriteLine();
+
+                // Add RAG context to chat using the Tool role
+                chatHistory.AddMessage(AuthorRole.Developer, contextBuilder.ToString());
+
+                contextIndex = chatHistory.Count;
+            }
+
+            // Use null-forgiving operator for question
+            chatHistory.AddUserMessage(question!);
+
+            // Stream response
+            StringBuilder responseBuilder = new();
+            Console.Write("AI: ");
+            await foreach (var msg in chatService.GetStreamingChatMessageContentsAsync(chatHistory, null, kernel))
+            {
+                Console.Write(msg.Content);
+                responseBuilder.Append(msg.Content);
+            }
+            Console.WriteLine();
+            chatHistory.AddAssistantMessage(responseBuilder.ToString());
+
+            // Remove content added by RAG
+            if (contextIndex >= 0)
+            {
+                chatHistory.RemoveAt(contextIndex);
+            }
+
+            Console.WriteLine();
+        }
+        
     }
+    
+
 }

@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticKernelSamples;
 
-
 /// <summary>
 /// This sample demonstrates the chat history feature of the Semantic Kernel.
 /// It allows you to have a conversation with the AI, maintaining context across messages.
@@ -13,7 +12,7 @@ namespace SemanticKernelSamples;
 
 internal static class Sample03
 {
-    public static async Task RunAsync(IConfiguration config)
+    public static async Task<bool> RunAsync(IConfiguration config)
     {
         var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
         var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
@@ -22,7 +21,7 @@ internal static class Sample03
         // Initialize Semantic Kernel
         var builder = Kernel.CreateBuilder();
         builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
-        var kernel = builder.Build();
+        Kernel kernel = builder.Build();
 
         // Create chat with history
         var chatService = kernel.GetRequiredService<IChatCompletionService>();
@@ -40,7 +39,7 @@ internal static class Sample03
             string? question = Console.ReadLine()!;
             if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
             {
-                break;
+                return true;
             }
 
             chatHistory.AddUserMessage(question); 
@@ -50,6 +49,6 @@ internal static class Sample03
             Console.WriteLine($"AI: {answer.Content}");
             Console.WriteLine();
         }
-
+        
     }
 }

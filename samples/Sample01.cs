@@ -11,7 +11,7 @@ namespace SemanticKernelSamples;
 
 internal static class Sample01
 {
-    public static async Task RunAsync(IConfiguration config)
+    public static async Task<bool> RunAsync(IConfiguration config)
     {
         var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
         var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
@@ -33,13 +33,13 @@ internal static class Sample01
             string? question = Console.ReadLine();
             if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
             {
-                break;
+                return true;
             }
 
             var response = await kernel.InvokePromptAsync(question!);
             Console.WriteLine($"AI: {response}");
             Console.WriteLine();
         }
-
+        
     }
 }

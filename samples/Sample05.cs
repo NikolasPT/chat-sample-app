@@ -1,115 +1,88 @@
-using System.Text;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Embeddings;
+using System.Numerics.Tensors;
 using Microsoft.Extensions.Configuration;
-using Microsoft.SemanticKernel.Plugins.Web.Google;
-using Microsoft.SemanticKernel.Data;
-using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
+
 
 namespace SemanticKernelSamples;
 
+/// <summary>
+/// This sample demonstrates how to use the Semantic Kernel to generate embeddings for a given input
+/// and compute similarities with a set of examples.
+/// It uses the Azure OpenAI embedding service to generate embeddings and compute cosine similarity.
+/// </summary>
+
 internal static class Sample05
 {
-    public static async Task RunAsync(IConfiguration config)
+    public static async Task<bool> RunAsync(IConfiguration config)
     {
-        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
-        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
-        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
-        var searchEngineId       = config["Google:SearchEngineId"]!;
-        var searchConsoleAPIKey  = config["Google:SearchConsoleAPIKey"]!;
 
-        // ---------- Kernel & model ----------
-        IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
+        var embeddingDeploymentName =   config["AzureAIFoundry:EmbeddingDeploymentName"]!;
+        var embeddingEndpoint =         config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
+        var embeddingApiKey =           config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
 
-        // Register the function-invocation filter so plugin calls are logged
-        builder.Services.AddSingleton<IFunctionInvocationFilter, InvocationLogger>();
-
+        // Initialize Semantic Kernel with embedding service
+        var builder = Kernel.CreateBuilder();
+        builder.AddAzureOpenAITextEmbeddingGeneration(embeddingDeploymentName, embeddingEndpoint, embeddingApiKey);
         Kernel kernel = builder.Build();
 
-        // ---------- Google text-search plugin ----------
-        GoogleTextSearch textSearch = new (
-            searchEngineId,
-            searchConsoleAPIKey);
-
-        var searchPlugin = textSearch.CreateWithGetTextSearchResults("SearchPlugin");
-        kernel.Plugins.Add(searchPlugin);
-
-        // ---------- Streaming chat settings ----------
-        PromptExecutionSettings settings = new()
-        {
-            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()   // let the model decide
-        };
-
-        IChatCompletionService chatSvc = kernel.GetRequiredService<IChatCompletionService>();
-        ChatHistory history = new(systemMessage:
-            "You are an AI assistant that helps people find information. " +
-            "Include citations to the relevant information where it is referenced in the response. " +
-            "When you call SearchPlugin.GetTextSearchResults, always pass count=\"10\" so that ten results are returned.");
+        string input = "Sopra Steria er Danmarks bedste IT-virksomhed.";
+        List<string> examples =
+        [
+            "Sopra Steria er Danmarks bedste IT-virksomhed.",
+            "Sopra Steria is the best IT company in Denmark.",
+            "What is the best IT company in Denmark?",
+            "Sopra Steria is a leading IT company in Denmark.",
+            "Sopra Steria is a top IT company in Denmark.",
+            "Sopra Steria builds IT systems",
+            "Sopra Steria is a company.",
+            "Denmark is a country.",
+            "København ligger i Danmark",
+            "Min virksomhed hedder Sopra Steria.",
+            "Jeg hedder Nikolas"
+        ];
 
         Console.WriteLine();
-        Console.WriteLine("Chat with streaming and Google search enabled (type 'exit' to quit):");
+        Console.WriteLine("Generating embeddings and computing similarities...");
         Console.WriteLine();
-        
-        // ---------- Chat loop ----------
-        while (true)
+        Console.WriteLine("Input:");
+        Console.WriteLine(input);
+        Console.WriteLine();
+
+        // Generate embeddings for the input and examples
+        ITextEmbeddingGenerationService embeddingService = kernel.GetRequiredService<ITextEmbeddingGenerationService>();
+        ReadOnlyMemory<float> inputEmbedding = (await embeddingService.GenerateEmbeddingsAsync([input])).First();
+        List<ReadOnlyMemory<float>> exampleEmbeddings = [.. await embeddingService.GenerateEmbeddingsAsync(examples)];
+
+        // Compute cosine similarity for each example and store results in a list
+        List<(float score, string text)> similarityResults = [];
+        for (int i = 0; i < examples.Count; i++)
         {
-            Console.Write("Me: ");
-            string question = Console.ReadLine() ?? "";
-            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
-            {
-                break;
-            }
-
-            history.AddUserMessage(question); // Add question to chat history
-
-            // ---------- Stream the reply ----------
-            var buffer = new StringBuilder();
-            Console.Write("AI: ");
-            await foreach (var chunk in chatSvc.GetStreamingChatMessageContentsAsync(history, settings, kernel))
-            {
-                Console.Write(chunk.Content);
-                buffer.Append(chunk.Content);
-            }
-            Console.WriteLine();
-
-            history.AddAssistantMessage(buffer.ToString()); // Add reply to chat history
-            Console.WriteLine();
+            float score = TensorPrimitives.CosineSimilarity(exampleEmbeddings[i].Span, inputEmbedding.Span);
+            similarityResults.Add((score, examples[i]));
         }
 
-    }
-}
+        // Sort the results in descending order by score
+        var similarities = similarityResults.OrderByDescending(x => x.score);
 
-
-public sealed class InvocationLogger : IFunctionInvocationFilter
-{
-    public async Task OnFunctionInvocationAsync(
-        FunctionInvocationContext context,
-        Func<FunctionInvocationContext, Task> next)
-    {
-        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        // Display the results
+        Console.WriteLine("Similarity\tExample");
+        foreach (var (score, text) in similarities)
         {
-            WriteIndented = true
-        };
-
-        // 1️ before the plugin runs
-        Console.WriteLine();
-        Console.WriteLine("===================================================================");
-        Console.WriteLine($"{context.Function.PluginName}.{context.Function.Name}");
-        Console.WriteLine($"args: {JsonSerializer.Serialize(context.Arguments, opts)}");
-
-        await next(context);           // executes the plugin
-
-        // 2️ after: GetValue<T>() to read the payload
-        if (context.Result is { } r)
-        {
-            var payload = r.GetValue<object>();   // or IEnumerable<TextSearchResult>
-            Console.WriteLine($"← {context.Function.Name} result:");
-            Console.WriteLine(JsonSerializer.Serialize(payload, opts));
+            Console.WriteLine($"{score:F6}\t{text}");
         }
-        Console.WriteLine("===================================================================");
         Console.WriteLine();
+        Console.WriteLine("Type 'exit' to return to menu or any other key to continue...");
+        var key = Console.ReadKey();
+        if (key.KeyChar == 'e' || key.KeyChar == 'E') // A bit simplistic, but works for this console app
+        {
+            string remaining = Console.ReadLine() ?? "";
+            if (remaining.Equals("xit", StringComparison.CurrentCultureIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
-}
 
+}

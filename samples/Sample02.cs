@@ -11,7 +11,7 @@ namespace SemanticKernelSamples;
 
 internal static class Sample02
 {
-    public static async Task RunAsync(IConfiguration config)
+    public static async Task<bool> RunAsync(IConfiguration config)
     {
         var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
         var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
@@ -27,15 +27,15 @@ internal static class Sample02
             functions:
             [
                 KernelFunctionFactory.CreateFromMethod(
-                    () => DateTime.UtcNow.ToString("r"),
-                    "Now",
-                    "Gets the current date and time"
+                    method:         () => DateTime.UtcNow.ToString("r"),
+                    functionName:   "Now",
+                    description:    "Gets the current date and time"
                 )
             ]);
-        var kernel = builder.Build();
+        Kernel kernel = builder.Build();
 
         // Create prompt function using the DateTime plugin
-        var prompt = KernelFunctionFactory.CreateFromPrompt(
+        KernelFunction prompt = KernelFunctionFactory.CreateFromPrompt(
             promptTemplate: @"The current date and time is {{ datetimehelpers.now }}.{{ $input }}"
         );
 
@@ -50,13 +50,17 @@ internal static class Sample02
             string? input = Console.ReadLine();
             if (string.Equals(input, "exit", StringComparison.OrdinalIgnoreCase))
             {
-                break;
+                return true;
             }
 
-            var result = await prompt.InvokeAsync(kernel, new() { ["input"] = input });
+            KernelArguments args = new()
+            {
+                ["input"] = input
+            };
+            var result = await prompt.InvokeAsync(kernel, args);
             Console.WriteLine($"AI: {result}");
             Console.WriteLine();
         }
-
+        
     }
 }

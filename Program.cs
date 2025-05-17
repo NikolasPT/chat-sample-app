@@ -12,44 +12,53 @@ class Program
             .AddUserSecrets<Program>()
             .Build();
 
-        Console.WriteLine("Choose a Semantic Kernel chat sample to run:");
-        Console.WriteLine(" 1) Console chat basic");
-        Console.WriteLine(" 2) Chat with DateTime plugin");
-        Console.WriteLine(" 3) Chat with memory history");
-        Console.WriteLine(" 4) (reserved)");
-        Console.WriteLine(" 5) Chat with dynamic web content");
-        Console.WriteLine(" 6) Embedding similarity demo");
-        Console.WriteLine(" 7) Chat with in‑memory RAG");
-        Console.Write("Enter choice (1-7): ");
-        if (!int.TryParse(Console.ReadLine(), out int choice))
+        bool exitProgram = false;
+        while (!exitProgram)
         {
-            Console.WriteLine("Invalid input. Exiting.");
-            return;
-        }
+            Console.WriteLine("\nChoose a Semantic Kernel sample to run:");
+            Console.WriteLine(" 1) Console chat basic");
+            Console.WriteLine(" 2) Chat with DateTime plugin");
+            Console.WriteLine(" 3) Chat with memory history");
+            Console.WriteLine(" 4) Chat with dynamic web content");
+            Console.WriteLine(" 5) Embedding similarity demo");
+            Console.WriteLine(" 6) Chat with in-memory RAG");
+            Console.WriteLine(" 7) Exit"); // Added exit option
+            Console.Write("Enter choice (1-7): ");
+            if (!int.TryParse(Console.ReadLine(), out int choice))
+            {
+                Console.WriteLine("Invalid input. Please enter a number between 1 and 7.");
+                continue;
+            }
 
-        switch (choice)
-        {
-            case 1:
-                await Sample01.RunAsync(config);
-                break;
-            case 2:
-                await Sample02.RunAsync(config);
-                break;
-            case 3:
-                await Sample03.RunAsync(config);
-                break;
-            case 5:
-                await Sample05.RunAsync(config);
-                break;
-            case 6:
-                await Sample06.RunAsync(config);
-                break;
-            case 7:
-                await Sample07.RunAsync(config);
-                break;
-            default:
-                Console.WriteLine("Option not yet implemented.");
-                break;
+            bool stayInSample = true;
+            switch (choice)
+            {
+                case 1:
+                    while (stayInSample) stayInSample = !await Sample01.RunAsync(config);
+                    break;
+                case 2:
+                    while (stayInSample) stayInSample = !await Sample02.RunAsync(config);
+                    break;
+                case 3:
+                    while (stayInSample) stayInSample = !await Sample03.RunAsync(config);
+                    break;
+                case 4:
+                    while (stayInSample) stayInSample = !await Sample04.RunAsync(config);
+                    break;
+                case 5:
+                    while (stayInSample) stayInSample = !await Sample05.RunAsync(config);
+                    break;
+                case 6:
+                    while (stayInSample) stayInSample = !await Sample06.RunAsync(config);
+                    break;
+                case 7:
+                    exitProgram = true;
+                    Console.WriteLine("Exiting application.");
+                    break;
+                default:
+                    Console.WriteLine("Invalid choice. Please enter a number between 1 and 7.");
+                    break;
+            }
         }
     }
 }
