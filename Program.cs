@@ -22,11 +22,12 @@ class Program
             Console.WriteLine(" 4) Chat with dynamic web content");
             Console.WriteLine(" 5) Embedding similarity demo");
             Console.WriteLine(" 6) Chat with in-memory RAG");
-            Console.WriteLine(" 7) Exit"); // Added exit option
-            Console.Write("Enter choice (1-7): ");
+            Console.WriteLine(" 7) Chat with agentic RAG");
+            Console.WriteLine(" 8) Exit");
+            Console.Write("Enter choice (1-8): ");
             if (!int.TryParse(Console.ReadLine(), out int choice))
             {
-                Console.WriteLine("Invalid input. Please enter a number between 1 and 7.");
+                Console.WriteLine("Invalid input. Please enter a number between 1 and 8.");
                 continue;
             }
 
@@ -52,6 +53,9 @@ class Program
                     while (stayInSample) stayInSample = !await Sample06.RunAsync(config);
                     break;
                 case 7:
+                    while (stayInSample) stayInSample = !await Sample07.RunAsync(config);
+                    break;
+                case 8:
                     exitProgram = true;
                     Console.WriteLine("Exiting application.");
                     break;

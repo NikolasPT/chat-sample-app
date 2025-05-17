@@ -6,7 +6,7 @@ using Microsoft.SemanticKernel.Memory;
 using Microsoft.SemanticKernel.Text;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using AngleSharp.Html.Parser;
-
+using System.Collections.Concurrent;
 
 namespace SemanticKernelSamples;
 
@@ -38,48 +38,54 @@ internal static class Sample06
         var chatService = kernel.GetRequiredService<IChatCompletionService>();
         ChatHistory chatHistory = new (systemMessage: "You are an AI assistant that helps people find information.");
 
-        // Build in-memory semantic memory with embeddings for RAG
         // Instantiate the embedding generation service
-        var embeddingService = new AzureOpenAITextEmbeddingGenerationService(
+        AzureOpenAITextEmbeddingGenerationService embeddingService = new(
             embeddingDeploymentName,
             embeddingEndpoint,
             embeddingApiKey);
 
-        // Explicitly type memory variable and use WithTextEmbeddingGeneration
+        // Instantiate the memory store for vector storage
+        // Use the Semantic Kernel VolatileMemoryStore for in-memory storage, other vector stores could be used as well.
+        // For example, you could use a database or a cloud-based vector store for persistent storage.
+        VolatileMemoryStore memoryStore = new();
+
+        // The combination of the text embedding generator and the memory store makes up the 'SemanticTextMemory' 
+        // object used to store and retrieve memories.
         ISemanticTextMemory memory = new MemoryBuilder()
-            .WithMemoryStore(new VolatileMemoryStore())
-            .WithTextEmbeddingGeneration(embeddingService) // Use the instantiated service
+            .WithMemoryStore(memoryStore)                   // Use the instantiated memory store
+            .WithTextEmbeddingGeneration(embeddingService)  // Use the instantiated service
             .Build();
 
-        // Download and index documents into memory
+        // Download and index websites into memory
         List<string> articleList = 
         [
             "https://www.dr.dk/event/melodigrandprix/saadan-er-danmarks-chancer-i-eurovision-finalen",
             "https://www.dr.dk/nyheder/indland/ansatte-i-hjemmeplejen-i-nordjysk-kommune-skal-nu-til-arbejde-baade-aften-og-nat"
         ];
-        List<string> allParagraphs = [];
+
+        ConcurrentBag<string> allParagraphs = []; // ConcurrentBag to allow concurrent writes
         using HttpClient httpClient = new();
-        foreach (var url in articleList)
+
+        // Fetch and parse each URL concurrently
+        await Parallel.ForEachAsync(articleList, async (url, cancellationToken) =>
         {
-            // Fetch raw HTML and parse with AngleSharp for readable text
-            var html = await httpClient.GetStringAsync(url);
-            var parser = new HtmlParser();
-            var doc = await parser.ParseDocumentAsync(html);
-            // Target article or main container, fallback to body
-            var container = doc.QuerySelector("article")
-                           ?? doc.QuerySelector("main")
-                           ?? doc.Body;
-            var text = container?.TextContent ?? string.Empty;
-            var lines = TextChunker.SplitPlainTextLines(text, 64);
-            var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512);
-            allParagraphs.AddRange(paragraphs);
-        }
+            string textContent = await ParseUrlContentAsync(url, httpClient);
+            if (!string.IsNullOrEmpty(textContent))
+            {
+                List<string> paragraphs = ChunkTextContent(textContent);
+                foreach (var paragraph in paragraphs)
+                {
+                    allParagraphs.Add(paragraph);
+                }
+            }
+        });
+
         for (var i = 0; i < allParagraphs.Count; i++)
         {
-            await memory.SaveInformationAsync(memoryName, allParagraphs[i], $"paragraph[{i}]");
+            await memory.SaveInformationAsync(memoryName, allParagraphs.ElementAt(i), $"paragraph[{i}]"); 
         }
 
-        // Chat loop with RAG
+        // ---------- Chat loop with RAG ----------
         Console.WriteLine("Chat with in-memory RAG (type 'exit' to quit):");
         while (true)
         {
@@ -112,8 +118,8 @@ internal static class Sample06
                 Console.WriteLine(contextBuilder.ToString());
                 Console.WriteLine();
 
-                // Add RAG context to chat using the Tool role
-                chatHistory.AddMessage(AuthorRole.Developer, contextBuilder.ToString());
+                // --------- Add RAG context to chat --------- 
+                chatHistory.AddAssistantMessage($" Context: \n{contextBuilder}");
 
                 contextIndex = chatHistory.Count;
             }
@@ -141,6 +147,50 @@ internal static class Sample06
             Console.WriteLine();
         }
         
+    }
+    
+
+    /// <summary>
+    /// Fetches the HTML content from a given URL and parses it to extract the text content.
+    /// </summary>
+    private static async Task<string> ParseUrlContentAsync(string url, HttpClient httpClient)
+    {
+        try
+        {
+            string html = await httpClient.GetStringAsync(url);
+            HtmlParser parser = new();
+            var doc = await parser.ParseDocumentAsync(html);
+
+            // Target article or main container, fallback to body
+            var container = doc.QuerySelector("article")
+                           ?? doc.QuerySelector("main")
+                           ?? doc.Body;
+
+            return container?.TextContent ?? "";
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"Error fetching URL {url}: {ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Splits the text content into smaller chunks for better indexing and retrieval 
+    /// using the TextChunker in Semantic Kernel.
+    /// </summary>
+    private static List<string> ChunkTextContent(string text)
+    {
+        int maxTokensPerLine = 64;
+        int maxTokensPerParagraph = 512;
+
+        // Split text into lines
+        List<string> lines = TextChunker.SplitPlainTextLines(text, maxTokensPerLine);
+
+        // Merge lines into paragraphs
+        List<string> paragraphs = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph);
+
+        return paragraphs;
     }
     
 
