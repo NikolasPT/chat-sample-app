@@ -60,7 +60,11 @@ internal static class Sample06
         List<string> articleList = 
         [
             "https://www.dr.dk/event/melodigrandprix/saadan-er-danmarks-chancer-i-eurovision-finalen",
-            "https://www.dr.dk/nyheder/indland/ansatte-i-hjemmeplejen-i-nordjysk-kommune-skal-nu-til-arbejde-baade-aften-og-nat"
+            "https://www.dr.dk/event/melodigrandprix/stemmetallene-afsloeret-saadan-gik-det-danmark-i-semifinalen-ved-eurovision",
+            "https://www.dr.dk/event/melodigrandprix/ekspert-om-totalt-uforudsigelig-eurovision-finale-det-er-helt-uden-skiven",
+            "https://www.dr.dk/event/melodigrandprix/danmark-fik-kun-point-fra-seerne-i-eurovision-finalen-det-var-en-meget",
+            "https://www.dr.dk/nyheder/kultur/oestrig-banker-sverige-og-vinder-eurovision-tredje-gang",
+            "https://www.dr.dk/event/melodigrandprix/fraekt-sceneshow-var-meget-finland-tvunget-til-aendre-sin-optraeden-foer"
         ];
 
         ConcurrentBag<string> allParagraphs = []; // ConcurrentBag to allow concurrent writes
@@ -80,6 +84,7 @@ internal static class Sample06
             }
         });
 
+        // Save each paragraph to the semantic text memory
         for (var i = 0; i < allParagraphs.Count; i++)
         {
             await memory.SaveInformationAsync(memoryName, allParagraphs.ElementAt(i), $"paragraph[{i}]"); 
@@ -97,14 +102,15 @@ internal static class Sample06
             }
 
             // Retrieve relevant context
-            StringBuilder contextBuilder = new();
             IAsyncEnumerable<MemoryQueryResult> results = memory.SearchAsync(
                 memoryName,
                 question,
-                limit: 3, // How many results to return
-                minRelevanceScore: 0.4f, // Minimum relevance score, lower returns more results
+                limit: 6, // The maximum number of results to return
+                minRelevanceScore: 0.2f, // Minimum relevance score, lower returns more results
                 withEmbeddings: true);
 
+            // Create a StringBuilder to store the context
+            StringBuilder contextBuilder = new();
             await foreach (var result in results)
             {
                 contextBuilder.AppendLine(result.Metadata.Text);
@@ -121,11 +127,11 @@ internal static class Sample06
                 // --------- Add RAG context to chat --------- 
                 chatHistory.AddAssistantMessage($" Context: \n{contextBuilder}");
 
-                contextIndex = chatHistory.Count;
+                contextIndex = chatHistory.Count - 1; // Store index of context message
             }
 
-            // Use null-forgiving operator for question
-            chatHistory.AddUserMessage(question!);
+            // Add user question/message to chat history
+            chatHistory.AddUserMessage(question);
 
             // Stream response
             StringBuilder responseBuilder = new();
@@ -138,7 +144,7 @@ internal static class Sample06
             Console.WriteLine();
             chatHistory.AddAssistantMessage(responseBuilder.ToString());
 
-            // Remove content added by RAG
+            // Remove content added by RAG from the chat history
             if (contextIndex >= 0)
             {
                 chatHistory.RemoveAt(contextIndex);
@@ -174,6 +180,7 @@ internal static class Sample06
             return "";
         }
     }
+
 
     /// <summary>
     /// Splits the text content into smaller chunks for better indexing and retrieval 

@@ -22,7 +22,7 @@ class Program
             Console.WriteLine(" 4) Chat with dynamic web content");
             Console.WriteLine(" 5) Embedding similarity demo");
             Console.WriteLine(" 6) Chat with in-memory RAG");
-            Console.WriteLine(" 7) Chat with agentic RAG");
+            Console.WriteLine(" 7) Chat with agentic RAG. WORK IN PROGRESS!");
             Console.WriteLine(" 8) Exit");
             Console.Write("Enter choice (1-8): ");
             if (!int.TryParse(Console.ReadLine(), out int choice))
