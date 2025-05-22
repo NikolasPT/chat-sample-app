@@ -85,6 +85,7 @@ internal static class Sample02
             Console.WriteLine();
             Console.WriteLine($"AI: {response.Content}");
             Console.WriteLine();
+
         }
     }
 }
