@@ -17,9 +17,9 @@ internal static class Sample05
     public static async Task<bool> RunAsync(IConfiguration config)
     {
 
-        var embeddingDeploymentName =   config["AzureAIFoundry:EmbeddingDeploymentName"]!;
-        var embeddingEndpoint =         config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
-        var embeddingApiKey =           config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
+        string embeddingDeploymentName      = config["AzureAIFoundry:EmbeddingDeploymentName"]!;
+        string embeddingEndpoint            = config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
+        string embeddingApiKey              = config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
 
         // Initialize Semantic Kernel with embedding service
         var builder = Kernel.CreateBuilder();

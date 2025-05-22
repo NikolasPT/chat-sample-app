@@ -13,9 +13,9 @@ internal static class Sample01
 {
     public static async Task<bool> RunAsync(IConfiguration config)
     {
-        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
-        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
-        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
+        string deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
+        string endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
+        string apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
 
         // Initialize Semantic Kernel
         var builder = Kernel.CreateBuilder();

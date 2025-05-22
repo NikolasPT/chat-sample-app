@@ -20,15 +20,15 @@ internal static class Sample06
 {
     public static async Task<bool> RunAsync(IConfiguration config)
     {
-        var deploymentName =            config["AzureAIFoundry:DeploymentName"]!;
-        var endpoint =                  config["AzureAIFoundry:GPT41:Endpoint"]!;
-        var apiKey =                    config["AzureAIFoundry:GPT41:APIKey"]!;
+        string deploymentName           = config["AzureAIFoundry:DeploymentName"]!;
+        string endpoint                 = config["AzureAIFoundry:GPT41:Endpoint"]!;
+        string apiKey                   = config["AzureAIFoundry:GPT41:APIKey"]!;
 
-        var embeddingDeploymentName =   config["AzureAIFoundry:EmbeddingDeploymentName"]!;
-        var embeddingEndpoint =         config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
-        var embeddingApiKey =           config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
+        string embeddingDeploymentName  = config["AzureAIFoundry:EmbeddingDeploymentName"]!;
+        string embeddingEndpoint        = config["AzureAIFoundry:TextEmbedding3Large:Endpoint"]!;
+        string embeddingApiKey          = config["AzureAIFoundry:TextEmbedding3Large:APIKey"]!;
 
-        const string memoryName = "RAG-memory";
+        const string memoryName         = "RAG-memory";
 
         // Initialize Semantic Kernel and chat service
         var builder = Kernel.CreateBuilder();
@@ -105,8 +105,8 @@ internal static class Sample06
             IAsyncEnumerable<MemoryQueryResult> results = memory.SearchAsync(
                 memoryName,
                 question,
-                limit: 6, // The maximum number of results to return
-                minRelevanceScore: 0.2f, // Minimum relevance score, lower returns more results
+                limit: 6,                   // The maximum number of results to return
+                minRelevanceScore: 0.2f,    // Minimum relevance score, lower returns more results
                 withEmbeddings: true);
 
             // Create a StringBuilder to store the context
