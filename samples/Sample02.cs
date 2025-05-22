@@ -1,43 +1,44 @@
-using Microsoft.SemanticKernel;
+using System.ComponentModel;
 using Microsoft.Extensions.Configuration;
-
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 namespace SemanticKernelSamples;
 
 /// <summary>
-/// This sample demonstrates Semantic Kernel plugins and how to use them in a chat context.
-/// It uses a DateTime plugin to get the current date and time, which is then used in the chat prompt.
+/// Demonstrates a DateTime plugin that the model can invoke automatically
+/// thanks to <see cref="OpenAIPromptExecutionSettings"/> with
+/// <see cref="FunctionChoiceBehavior.Auto()"/>.
 /// </summary>
 
 internal static class Sample02
 {
     public static async Task<bool> RunAsync(IConfiguration config)
     {
-        var deploymentName       = config["AzureAIFoundry:DeploymentName"]!;
-        var endpoint             = config["AzureAIFoundry:GPT41:Endpoint"]!;
-        var apiKey               = config["AzureAIFoundry:GPT41:APIKey"]!;
+        string deploymentName =     config["AzureAIFoundry:DeploymentName"]!;
+        string endpoint =           config["AzureAIFoundry:GPT41:Endpoint"]!;
+        string apiKey =             config["AzureAIFoundry:GPT41:APIKey"]!;
 
-        // Initialize Semantic Kernel
+        // ---------- Kernel & model ----------
         var builder = Kernel.CreateBuilder();
         builder.AddAzureOpenAIChatCompletion(deploymentName, endpoint, apiKey);
-        
-        // Register DateTime helper plugin
-        builder.Plugins.AddFromFunctions(
-            pluginName: "DateTimeHelpers",
-            functions:
-            [
-                KernelFunctionFactory.CreateFromMethod(
-                    method:         () => DateTime.UtcNow.ToString("r"),
-                    functionName:   "Now",
-                    description:    "Gets the current date and time"
-                )
-            ]);
-        Kernel kernel = builder.Build();
+        builder.Services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-        // Create prompt function using the DateTime plugin
-        KernelFunction prompt = KernelFunctionFactory.CreateFromPrompt(
-            promptTemplate: @"The current date and time is {{ datetimehelpers.now }}.{{ $input }}"
-        );
+        // ---------- Register plugin ----------
+        builder.Plugins.Add(KernelPluginFactory.CreateFromType<DateTimePlugin>());
+
+        Kernel kernel = builder.Build();
+        var chat = kernel.GetRequiredService<IChatCompletionService>();
+
+        // ---------- Auto function-calling settings ----------
+        OpenAIPromptExecutionSettings settings = new()
+        {
+            // Let the model decide when it should call a plugin function
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+        };
 
         Console.WriteLine();
         Console.WriteLine("Chat with DateTime plugin (type 'exit' to quit):");
@@ -47,20 +48,32 @@ internal static class Sample02
         while (true)
         {
             Console.Write("Me: ");
-            string? input = Console.ReadLine();
-            if (string.Equals(input, "exit", StringComparison.OrdinalIgnoreCase))
+            string userInput = Console.ReadLine()!;
+            if (string.Equals(userInput, "exit", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            KernelArguments args = new()
-            {
-                ["input"] = input
-            };
-            var result = await prompt.InvokeAsync(kernel, args);
-            Console.WriteLine($"AI: {result}");
+            var response = await chat.GetChatMessageContentAsync(
+                userInput,
+                executionSettings: settings,
+                kernel: kernel);
+
+            Console.WriteLine($"AI: {response.Content}");
             Console.WriteLine();
         }
-        
+    }
+}
+
+/// <summary>
+/// Plugin that exposes the current UTC date/time.
+/// </summary>
+internal class DateTimePlugin
+{
+    [KernelFunction("now")]
+    [Description("Returns the current UTC date and time in RFC 1123 format.")]
+    public static string Now()
+    {
+        return DateTime.UtcNow.ToString("r");
     }
 }
