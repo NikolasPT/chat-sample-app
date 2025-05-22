@@ -60,34 +60,55 @@ internal static class Sample04
         Console.WriteLine();
         Console.WriteLine("Chat with streaming and Google search enabled (type 'exit' to quit):");
         Console.WriteLine();
-        
+
         // ---------- Chat loop ----------
         while (true)
         {
             Console.Write("Me: ");
-            string question = Console.ReadLine() ?? "";
-            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
+            string userInput = Console.ReadLine() ?? "";
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                continue;
+            }
+
+            if (string.Equals(userInput, "exit", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            history.AddUserMessage(question); // Add question to chat history
+            history.AddUserMessage(userInput); // Add question to chat history
 
-            // ---------- Stream the reply ----------
+            bool aiPrefixPrinted = false; // Tracks if "AI: " has been printed for the current response
             StringBuilder buffer = new();
-            Console.Write("AI: ");
+            // ---------- Stream the reply ----------
             await foreach (var chunk in chatCompletionService
                 .GetStreamingChatMessageContentsAsync(history, settings, kernel))
             {
-                Console.Write(chunk.Content);
-                buffer.Append(chunk.Content); 
+                // Only print "AI: " if there's actual content from the assistant to display
+                // and the prefix hasn't been printed yet for this response.
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    if (!aiPrefixPrinted)
+                    {
+                        Console.Write("AI: ");
+                        aiPrefixPrinted = true;
+                    }
+
+                    // Print and append the recieved token to the buffer
+                    Console.Write(chunk.Content);
+                    buffer.Append(chunk.Content);
+                }
             }
             Console.WriteLine();
 
-            history.AddAssistantMessage(buffer.ToString()); // Add reply to chat history
+            // Add the assistant's message to history only if the AI actually provided content.
+            if (aiPrefixPrinted) // This implies buffer.Length > 0 for textual content
+            {
+                history.AddAssistantMessage(buffer.ToString());
+            }
             Console.WriteLine();
         }
-        
+
     }
 }
 
@@ -105,20 +126,22 @@ public sealed class InvocationLogger : IFunctionInvocationFilter
 
         // 1️ before the plugin runs
         Console.WriteLine();
+        Console.WriteLine("Search results section start");
         Console.WriteLine("===================================================================");
         Console.WriteLine($"{context.Function.PluginName}.{context.Function.Name}");
         Console.WriteLine($"args: {JsonSerializer.Serialize(context.Arguments, opts)}");
 
-        await next(context);           // executes the plugin
+        await next(context); // executes the plugin
 
         // 2️ after: GetValue<T>() to read the payload
         if (context.Result is { } r)
         {
-            var payload = r.GetValue<object>();   // or IEnumerable<TextSearchResult>
+            var payload = r.GetValue<object>();
             Console.WriteLine($"← {context.Function.Name} result:");
             Console.WriteLine(JsonSerializer.Serialize(payload, opts));
         }
         Console.WriteLine("===================================================================");
+        Console.WriteLine("Search results section finished");
         Console.WriteLine();
     }
 }

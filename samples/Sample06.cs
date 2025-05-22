@@ -90,13 +90,19 @@ internal static class Sample06
             await memory.SaveInformationAsync(memoryName, allParagraphs.ElementAt(i), $"paragraph[{i}]"); 
         }
 
-        // ---------- Chat loop with RAG ----------
+        Console.WriteLine();
         Console.WriteLine("Chat with in-memory RAG (type 'exit' to quit):");
+        // ---------- Chat loop with RAG ----------
         while (true)
         {
             Console.Write("Me: ");
-            string question = Console.ReadLine() ?? "";
-            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
+            string userInput = Console.ReadLine() ?? "";
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                continue;
+            }
+
+            if (string.Equals(userInput, "exit", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -104,7 +110,7 @@ internal static class Sample06
             // Retrieve relevant context
             IAsyncEnumerable<MemoryQueryResult> results = memory.SearchAsync(
                 memoryName,
-                question,
+                userInput,
                 limit: 6,                   // The maximum number of results to return
                 minRelevanceScore: 0.2f,    // Minimum relevance score, lower returns more results
                 withEmbeddings: true);
@@ -120,7 +126,8 @@ internal static class Sample06
             if (contextBuilder.Length > 0)
             {
                 // Output RAG context for debugging
-                Console.WriteLine("RAG system provided context:");
+                Console.WriteLine();
+                Console.WriteLine("RAG system provided context =========================================");
                 Console.WriteLine(contextBuilder.ToString());
                 Console.WriteLine();
 
@@ -131,7 +138,7 @@ internal static class Sample06
             }
 
             // Add user question/message to chat history
-            chatHistory.AddUserMessage(question);
+            chatHistory.AddUserMessage(userInput);
 
             // Stream response
             StringBuilder responseBuilder = new();

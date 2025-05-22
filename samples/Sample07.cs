@@ -114,10 +114,15 @@ internal static class Sample07
         while (true)
         {
             Console.Write("Me: ");
-            string question = Console.ReadLine() ?? string.Empty;
-            if (question.Equals("exit", StringComparison.OrdinalIgnoreCase)) return true;
+            string userInput = Console.ReadLine() ?? "";
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                continue;
+            }
 
-            chatHistory.AddUserMessage(question);
+            if (userInput.Equals("exit", StringComparison.OrdinalIgnoreCase)) return true;
+
+            chatHistory.AddUserMessage(userInput);
             Console.Write("AI: ");
             var buffer = new StringBuilder();
             bool received = false;

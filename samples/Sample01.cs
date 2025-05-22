@@ -30,13 +30,18 @@ internal static class Sample01
         while (true)
         {
             Console.Write("Me: ");
-            string question = Console.ReadLine()!;
-            if (string.Equals(question, "exit", StringComparison.OrdinalIgnoreCase))
+            string userInput = Console.ReadLine() ?? "";
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                continue;
+            }
+
+            if (string.Equals(userInput, "exit", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            var response = await kernel.InvokePromptAsync(question);
+            var response = await kernel.InvokePromptAsync(userInput);
             Console.WriteLine($"AI: {response}");
             Console.WriteLine();
         }

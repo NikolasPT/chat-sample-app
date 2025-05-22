@@ -66,7 +66,12 @@ internal static class Sample02
         while (true)
         {
             Console.Write("Me: ");
-            string userInput = Console.ReadLine()!;
+            string userInput = Console.ReadLine() ?? "";
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                continue;
+            }
+
             if (string.Equals(userInput, "exit", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
